@@ -96,11 +96,7 @@ class NdkBuilder(BuilderImpl):
 class CMakeBuilder(BuilderImpl):
     def __init__(self, build_dir: str, install_dir: str):
         super().__init__(build_dir, install_dir)
-        self.config_cmd = [
-            "cmake",
-            f"-DCMAKE_RUNTIME_OUTPUT_DIRECTORY={self.install_dir}",
-            f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={self.install_dir}",
-        ] + ["-B", self.build_dir]
+        self.config_cmd = ["cmake", "-B", self.build_dir]
         self.build_cmd = ["cmake", "--build", self.build_dir]
 
     def build(self, build_options: Optional[List[str]] = None):

@@ -13,10 +13,10 @@
 # limitations under the License.
 
 
-from .builder import Builder, NdkBuilder, CMakeBuilder, CMakeWindowsVsMsvcBuilder, CMakeWindowsMingwBuilder, CMakeWindowsClangMsvcBuilder, CMakeAndroidBuilder, CMakeOhosBuilder
+from .builder import Builder, BuilderType, BuilderFactory
 
 
 __all__ = [
-    "Builder", "NdkBuilder", "CMakeBuilder", "CMakeWindowsVsMsvcBuilder", "CMakeWindowsMingwBuilder", "CMakeWindowsClangMsvcBuilder", "CMakeAndroidBuilder", "CMakeOhosBuilder"
+    "Builder", "BuilderType", "BuilderFactory"
 ]
-__version__ = "0.0.1"
+__version__ = "0.1.0"

@@ -50,10 +50,10 @@ export PYTHONPATH=PATH_TO_BUILDER:$PYTHONPATH
 from builder import BuilderFactory, BuilderType
 
 # 创建一个构建器实例
-builder = BuilderFactory.create(BuilderType.CMAKE_GCC, "build_directory", "compiler_prefix")
+builder = BuilderFactory.create(BuilderType.CMAKE_GCC, build_dir="build_directory")
 
 # 执行构建
-builder.build()
+builder.build(compiler_prefix="prefix", compiler_suffix="suffix")
 
 # 清理构建文件
 builder.clean()

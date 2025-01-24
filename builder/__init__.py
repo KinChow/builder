@@ -19,4 +19,4 @@ from .builder import Builder, BuilderType, BuilderFactory
 __all__ = [
     "Builder", "BuilderType", "BuilderFactory"
 ]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

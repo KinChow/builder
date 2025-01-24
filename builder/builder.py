@@ -46,12 +46,17 @@ class Builder(metaclass=ABCMeta):
     build(build_options: Optional[List[str]] = None)
         Abstract method to perform the build operation. 
         Parameters:
+            compiler_prefix (str): The compiler prefix to use. Default is an empty string.
+            compiler_suffix (str): The compiler suffix to use. Default is an empty string.
             build_options (Optional[List[str]]): A list of build options. Default is None.
     clean()
         Abstract method to perform the clean operation.
     """
     @abstractmethod
-    def build(self, build_options: Optional[List[str]] = None):
+    def build(self,
+              compiler_prefix: str = "",
+              compiler_suffix: str = "",
+              build_options: Optional[List[str]] = None):
         pass
 
     @abstractmethod
@@ -64,7 +69,10 @@ class BuilderImpl(Builder):
         self.build_dir = build_dir
 
     @abstractmethod
-    def build(self, build_options: Optional[List[str]] = None):
+    def build(self,
+              compiler_prefix: str = "",
+              compiler_suffix: str = "",
+              build_options: Optional[List[str]] = None):
         pass
 
     def clean(self):
@@ -72,15 +80,14 @@ class BuilderImpl(Builder):
 
 
 class NdkBuilder(BuilderImpl):
-    def __init__(self, build_dir: str, compiler_prefix: str = ""):
+    def __init__(self, build_dir: str):
         super().__init__(build_dir)
-        self.build_cmd = self._get_ndk_build_command(compiler_prefix)
 
-    def _get_ndk_build_command(self, compiler_prefix: str) -> List[str]:
+    def _get_build_command(self, compiler_prefix: str, compiler_suffix) -> List[str]:
         compiler = "ndk-build.cmd" if sys.platform == "win32" else "ndk-build"
 
         if compiler_prefix:
-            compiler_path = Path(compiler_prefix) / compiler
+            compiler_path = Path(compiler_prefix + compiler)
         else:
             android_ndk = os.environ.get("ANDROID_NDK")
             if not android_ndk:
@@ -98,39 +105,50 @@ class NdkBuilder(BuilderImpl):
             f"NDK_LIBS_OUT={self.build_dir}",
         ]
 
-    def build(self, build_options: Optional[List[str]] = None):
-        cmd = self.build_cmd + (build_options or [])
-        run_cmd(cmd)
+    def build(self,
+              compiler_prefix: str = "",
+              compiler_suffix: str = "",
+              build_options: Optional[List[str]] = None):
+        build_cmd = self._get_build_command(
+            compiler_prefix, compiler_suffix) + (build_options or [])
+        run_cmd(build_cmd)
 
 
 class CMakeBuilder(BuilderImpl):
     def __init__(self, build_dir: str):
         super().__init__(build_dir)
-        self.config_cmd = ["cmake", "-B", self.build_dir]
-        self.build_cmd = ["cmake", "--build", self.build_dir]
 
-    def build(self, build_options: Optional[List[str]] = None):
-        config_cmd = self.config_cmd + (build_options or [])
+    def _get_config_cmd(self, compiler_prefix: str, compiler_suffix: str) -> List[str]:
+        return ["cmake", "-B", self.build_dir]
+
+    def build(self,
+              compiler_prefix: str = "",
+              compiler_suffix: str = "",
+              build_options: Optional[List[str]] = None):
+        config_cmd = self._get_config_cmd(
+            compiler_prefix, compiler_suffix) + (build_options or [])
         run_cmd(config_cmd)
-        run_cmd(self.build_cmd)
+        build_cmd = ["cmake", "--build", self.build_dir]
+        run_cmd(build_cmd)
 
 
 class CMakeWindowsVsMsvcBuilder(CMakeBuilder):
     def __init__(self, build_dir: str):
         super().__init__(build_dir)
-        self.config_cmd += ["-G", "Visual Studio 17 2022"]
+
+    def _get_config_cmd(self, compiler_prefix: str, compiler_suffix: str) -> List[str]:
+        return super()._get_config_cmd(compiler_prefix, compiler_suffix) + ["-G", "Visual Studio 17 2022"]
 
 
 class CMakeWindowsMingwBuilder(CMakeBuilder):
-    def __init__(self, build_dir: str, compiler_prefix: str = ""):
+    def __init__(self, build_dir: str):
         super().__init__(build_dir)
-        self.config_cmd += self._get_config_cmd(compiler_prefix)
 
-    def _get_config_cmd(self, compiler_prefix: str) -> List[str]:
+    def _get_config_cmd(self, compiler_prefix: str, compiler_suffix: str) -> List[str]:
         make = "mingw32-make.exe"
 
         if compiler_prefix:
-            make_path = Path(compiler_prefix) / make
+            make_path = Path(compiler_prefix + make)
         else:
             mingw = os.environ.get("MinGW")
             if not mingw:
@@ -141,7 +159,7 @@ class CMakeWindowsMingwBuilder(CMakeBuilder):
         if not make_path.exists():
             raise FileNotFoundError(f"{make_path} does not exist")
 
-        return [
+        return super()._get_config_cmd(compiler_prefix, compiler_suffix) + [
             "-G",
             "MinGW Makefiles",
             f"-DCMAKE_MAKE_PROGRAM={make_path}",
@@ -149,11 +167,10 @@ class CMakeWindowsMingwBuilder(CMakeBuilder):
 
 
 class CMakeClangBuilder(CMakeBuilder):
-    def __init__(self, build_dir: str, compiler_prefix: str = ""):
+    def __init__(self, build_dir: str):
         super().__init__(build_dir)
-        self.config_cmd += self._get_config_cmd(compiler_prefix)
 
-    def _get_config_cmd(self, compiler_prefix: str) -> List[str]:
+    def _get_config_cmd(self, compiler_prefix: str, compiler_suffix: str) -> List[str]:
         compiler_c = "clang.exe" if sys.platform == "win32" else "clang"
         compiler_cpp = "clang++.exe" if sys.platform == "win32" else "clang++"
 
@@ -173,7 +190,7 @@ class CMakeClangBuilder(CMakeBuilder):
         if not compiler_cpp_path.exists():
             raise FileNotFoundError(f"{compiler_cpp_path} does not exist")
 
-        return [
+        return super()._get_config_cmd(compiler_prefix, compiler_suffix) + [
             "-G",
             "Ninja",
             f"-DCMAKE_C_COMPILER:FILEPATH={compiler_c_path}",
@@ -182,17 +199,18 @@ class CMakeClangBuilder(CMakeBuilder):
 
 
 class CMakeGccBuilder(CMakeBuilder):
-    def __init__(self, build_dir: str, compiler_prefix: str = ""):
+    def __init__(self, build_dir: str):
         super().__init__(build_dir)
-        self.config_cmd += self._get_config_cmd(compiler_prefix)
 
-    def _get_config_cmd(self, compiler_prefix: str) -> List[str]:
+    def _get_config_cmd(self, compiler_prefix: str, compiler_suffix: str) -> List[str]:
         compiler_c = "gcc"
         compiler_cpp = "g++"
 
-        if compiler_prefix:
-            compiler_c_path = Path(compiler_prefix + compiler_c)
-            compiler_cpp_path = Path(compiler_prefix + compiler_cpp)
+        if compiler_prefix or compiler_suffix:
+            compiler_c_path = Path(
+                compiler_prefix + compiler_c + compiler_suffix)
+            compiler_cpp_path = Path(
+                compiler_prefix + compiler_cpp + compiler_suffix)
         else:
             gcc = os.environ.get("GCC")
             if not gcc:
@@ -206,7 +224,7 @@ class CMakeGccBuilder(CMakeBuilder):
         if not compiler_cpp_path.exists():
             raise FileNotFoundError(f"{compiler_cpp_path} does not exist")
 
-        return [
+        return super()._get_config_cmd(compiler_prefix, compiler_suffix) + [
             "-G",
             "Ninja",
             f"-DCMAKE_C_COMPILER:FILEPATH={compiler_c_path}",
@@ -215,11 +233,10 @@ class CMakeGccBuilder(CMakeBuilder):
 
 
 class CMakeAndroidBuilder(CMakeBuilder):
-    def __init__(self, build_dir: str, compiler_prefix: str = ""):
+    def __init__(self, build_dir: str):
         super().__init__(build_dir)
-        self.config_cmd += self._get_config_cmd(compiler_prefix)
 
-    def _get_config_cmd(self, compiler_prefix: str) -> List[str]:
+    def _get_config_cmd(self, compiler_prefix: str, compiler_suffix: str) -> List[str]:
         if compiler_prefix:
             cmake_toolchain = Path(compiler_prefix) / "build" / \
                 "cmake" / "android.toolchain.cmake"
@@ -234,7 +251,7 @@ class CMakeAndroidBuilder(CMakeBuilder):
         if not cmake_toolchain.exists():
             raise FileNotFoundError(f"{cmake_toolchain} does not exist")
 
-        return [
+        return super()._get_config_cmd(compiler_prefix, compiler_suffix) + [
             "-G",
             "Ninja",
             f"-DCMAKE_TOOLCHAIN_FILE={cmake_toolchain}",
@@ -245,11 +262,10 @@ class CMakeAndroidBuilder(CMakeBuilder):
 
 
 class CMakeOhosBuilder(CMakeBuilder):
-    def __init__(self, build_dir: str, compiler_prefix: str = ""):
+    def __init__(self, build_dir: str):
         super().__init__(build_dir)
-        self.config_cmd += self._get_config_cmd(compiler_prefix)
 
-    def _get_config_cmd(self, compiler_prefix: str) -> List[str]:
+    def _get_config_cmd(self, compiler_prefix: str, compiler_suffix: str) -> List[str]:
         if compiler_prefix:
             cmake_toolchain = Path(compiler_prefix) / "build" / \
                 "cmake" / "ohos.toolchain.cmake"
@@ -264,13 +280,13 @@ class CMakeOhosBuilder(CMakeBuilder):
         if not cmake_toolchain.exists():
             raise FileNotFoundError(f"{cmake_toolchain} does not exist")
 
-        return [
+        return super()._get_config_cmd(compiler_prefix, compiler_suffix) + [
             "-G",
             "Ninja",
             f"-DCMAKE_TOOLCHAIN_FILE={cmake_toolchain}",
-            "-DANDROID_ABI=arm64-v8a",
-            "-DANDROID_STL=c++_shared",
-            "-DANDROID_PLATFORM=OHOS",
+            "-DOHOS_ABI=arm64-v8a",
+            "-DOHOS_STL=c++_shared",
+            "-DOHOS_PLATFORM=OHOS",
         ]
 
 
@@ -302,32 +318,31 @@ class BuilderFactory:
 
     Methods
     -------
-    create(builder_type: BuilderType, build_dir: str, compiler_prefix: str = "") -> Builder
+    create(builder_type: BuilderType, build_dir: str) -> Builder
         Static method to create a builder instance based on the provided builder type.
         Parameters:
             builder_type (BuilderType): The type of builder to create.
             build_dir (str): The directory where the build will take place.
-            compiler_prefix (str, optional): The compiler prefix to use. Defaults to an empty string.
         Returns:
             Builder: An instance of the specified builder type.
         Raises:
             ValueError: If an invalid builder type is provided.
     """
     @staticmethod
-    def create(builder_type: BuilderType, build_dir: str, compiler_prefix: str = "") -> Builder:
+    def create(builder_type: BuilderType, build_dir: str) -> Builder:
         if builder_type == BuilderType.NDK:
-            return NdkBuilder(build_dir, compiler_prefix)
+            return NdkBuilder(build_dir)
         elif builder_type == BuilderType.CMAKE_WINDOWS_VS_MSVC:
             return CMakeWindowsVsMsvcBuilder(build_dir)
         elif builder_type == BuilderType.CMAKE_WINDOWS_MINGW:
-            return CMakeWindowsMingwBuilder(build_dir, compiler_prefix)
+            return CMakeWindowsMingwBuilder(build_dir)
         elif builder_type == BuilderType.CMAKE_CLANG:
-            return CMakeClangBuilder(build_dir, compiler_prefix)
+            return CMakeClangBuilder(build_dir)
         elif builder_type == BuilderType.CMAKE_GCC:
-            return CMakeGccBuilder(build_dir, compiler_prefix)
+            return CMakeGccBuilder(build_dir)
         elif builder_type == BuilderType.CMAKE_ANDROID:
-            return CMakeAndroidBuilder(build_dir, compiler_prefix)
+            return CMakeAndroidBuilder(build_dir)
         elif builder_type == BuilderType.CMAKE_OHOS:
-            return CMakeOhosBuilder(build_dir, compiler_prefix)
+            return CMakeOhosBuilder(build_dir)
         else:
             raise ValueError(f"Invalid builder type: {builder_type}")
